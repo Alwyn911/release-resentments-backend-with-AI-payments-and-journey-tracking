@@ -1,0 +1,424 @@
+# RELEASE Resentments Backend - Deployment Guide
+
+## 📋 Table of Contents
+1. [Prerequisites](#prerequisites)
+2. [Local Development Setup](#local-development-setup)
+3. [Environment Configuration](#environment-configuration)
+4. [Database Setup](#database-setup)
+5. [Stripe Configuration](#stripe-configuration)
+6. [Production Deployment](#production-deployment)
+7. [Testing](#testing)
+8. [Troubleshooting](#troubleshooting)
+
+---
+
+## 🔧 Prerequisites
+
+### Required Software
+- **Node.js** v18+ and npm v9+
+- **MongoDB** (local or MongoDB Atlas)
+- **Git** for version control
+
+### Required Accounts
+- **MongoDB Atlas** (free tier) - https://www.mongodb.com/cloud/atlas
+- **Stripe** account - https://stripe.com
+- **Anthropic** account - https://console.anthropic.com/
+- **SendGrid** (or Mailgun) - https://sendgrid.com
+- **Hosting provider** (Railway, Heroku, or DigitalOcean)
+
+---
+
+## 💻 Local Development Setup
+
+### Step 1: Create Project Structure
+```bash
+mkdir release-resentments-backend
+cd release-resentments-backend
+
+# Create folder structure
+mkdir -p models routes utils
+```
+
+### Step 2: Initialize Node.js Project
+```bash
+npm init -y
+```
+
+### Step 3: Install Dependencies
+```bash
+npm install express mongoose bcryptjs jsonwebtoken cors helmet dotenv express-rate-limit stripe @anthropic-ai/sdk @sendgrid/mail nodemailer
+
+# Install dev dependencies
+npm install --save-dev nodemon jest supertest eslint
+```
+
+### Step 4: Create All Files
+Copy the following files from the artifacts:
+- `server.js` - Main server file
+- `models/User.js` - User database model
+- `routes/auth.js` - Authentication routes
+- `routes/stripe.js` - Payment routes
+- `routes/ai.js` - AI chatbot routes
+- `routes/journeys.js` - Journey tracking routes
+- `utils/email.js` - Email utility
+- `package.json` - Dependencies
+- `.env.example` - Environment template
+
+### Step 5: Create .env File
+```bash
+cp .env.example .env
+# Then edit .env with your actual credentials
+```
+
+---
+
+## ⚙️ Environment Configuration
+
+### Create .env File
+```env
+# Server
+NODE_ENV=development
+PORT=5000
+
+# MongoDB
+MONGODB_URI=your_mongodb_connection_string
+
+# JWT
+JWT_SECRET=generate_a_random_32_character_string
+
+# Frontend
+FRONTEND_URL=http://localhost:3000
+
+# Stripe
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_ID=price_...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Email
+EMAIL_API_KEY=your_sendgrid_api_key
+EMAIL_FROM=noreply@resentmentrelease.com
+EMAIL_FROM_NAME=RELEASE Resentments
+```
+
+### Generate Secure JWT Secret
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+---
+
+## 🗄️ Database Setup
+
+### Option 1: MongoDB Atlas (Recommended for Production)
+
+1. **Create Account**: Go to https://www.mongodb.com/cloud/atlas
+2. **Create Cluster**: Choose free tier (M0)
+3. **Create Database User**:
+   - Database Access → Add New User
+   - Username: `release-admin`
+   - Password: Generate secure password
+   - Save credentials!
+
+4. **Whitelist IP**: 
+   - Network Access → Add IP Address
+   - For development: Add your current IP
+   - For production: Add `0.0.0.0/0` (allow from anywhere)
+
+5. **Get Connection String**:
+   - Clusters → Connect → Connect your application
+   - Copy connection string
+   - Replace `<password>` with your password
+   - Add to `.env` as `MONGODB_URI`
+
+### Option 2: Local MongoDB
+
+1. **Install MongoDB**:
+```bash
+# macOS
+brew install mongodb-community
+
+# Ubuntu
+sudo apt-get install mongodb
+
+# Windows: Download from mongodb.com
+```
+
+2. **Start MongoDB**:
+```bash
+mongod --dbpath=/path/to/data
+```
+
+3. **Set Connection String**:
+```env
+MONGODB_URI=mongodb://localhost:27017/release-resentments
+```
+
+---
+
+## 💳 Stripe Configuration
+
+### 1. Create Stripe Account
+- Go to https://stripe.com
+- Sign up for account
+- Complete business verification
+
+### 2. Get API Keys
+1. Dashboard → Developers → API keys
+2. Copy **Publishable key** (pk_test_...)
+3. Copy **Secret key** (sk_test_...)
+4. Add to `.env`
+
+### 3. Create Product & Price
+1. Dashboard → Products → Add Product
+2. Name: "RELEASE Premium Subscription"
+3. Price: $9.95/month, recurring
+4. Copy **Price ID** (starts with price_...)
+5. Add to `.env` as `STRIPE_PRICE_ID`
+
+### 4. Setup Webhook
+1. Dashboard → Developers → Webhooks → Add endpoint
+2. Endpoint URL: `https://your-domain.com/api/stripe/webhook`
+3. Events to send:
+   - `checkout.session.completed`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   - `invoice.payment_succeeded`
+   - `invoice.payment_failed`
+4. Copy **Webhook Secret** (whsec_...)
+5. Add to `.env` as `STRIPE_WEBHOOK_SECRET`
+
+### 5. Test Mode vs Live Mode
+- Use **Test Mode** for development (keys start with `sk_test_`)
+- Switch to **Live Mode** for production (keys start with `sk_live_`)
+- Test cards: `4242 4242 4242 4242` (any future date, any CVC)
+
+---
+
+## 🤖 Anthropic (Claude AI) Setup
+
+### 1. Create Account
+- Go to https://console.anthropic.com/
+- Sign up for account
+- Add payment method (pay-as-you-go)
+
+### 2. Get API Key
+1. Console → Settings → API Keys
+2. Create new key
+3. Copy key (starts with `sk-ant-`)
+4. Add to `.env` as `ANTHROPIC_API_KEY`
+
+### 3. Pricing
+- Claude Sonnet: ~$3 per million tokens
+- Average conversation: ~2,000 tokens = $0.006
+- Budget ~$50-100/month for 1000 active users
+
+---
+
+## 📧 Email Setup (SendGrid)
+
+### 1. Create SendGrid Account
+- Go to https://sendgrid.com
+- Free tier: 100 emails/day
+
+### 2. Create API Key
+1. Settings → API Keys → Create API Key
+2. Full Access permissions
+3. Copy key
+4. Add to `.env` as `EMAIL_API_KEY`
+
+### 3. Verify Sender Identity
+1. Settings → Sender Authentication
+2. Verify single sender email
+3. Use this as `EMAIL_FROM` in `.env`
+
+---
+
+## 🚀 Production Deployment
+
+### Option 1: Railway (Easiest, Recommended)
+
+1. **Create Railway Account**: https://railway.app
+2. **Create New Project**: "New Project" → "Deploy from GitHub"
+3. **Connect Repository**: Link your GitHub repo
+4. **Add Environment Variables**:
+   - Settings → Variables
+   - Add all variables from `.env`
+5. **Deploy**: Railway auto-deploys on push
+
+### Option 2: Heroku
+
+```bash
+# Install Heroku CLI
+npm install -g heroku
+
+# Login
+heroku login
+
+# Create app
+heroku create release-resentments-api
+
+# Add MongoDB
+heroku addons:create mongodb:sandbox
+
+# Set environment variables
+heroku config:set JWT_SECRET=your_secret
+heroku config:set STRIPE_SECRET_KEY=sk_...
+heroku config:set ANTHROPIC_API_KEY=sk-ant-...
+# ... (add all variables)
+
+# Deploy
+git push heroku main
+
+# Open
+heroku open
+```
+
+### Option 3: DigitalOcean App Platform
+
+1. Create DigitalOcean account
+2. Create App → GitHub repository
+3. Set environment variables
+4. Deploy
+
+---
+
+## 🧪 Testing
+
+### Run Locally
+```bash
+# Development mode with auto-reload
+npm run dev
+
+# Production mode
+npm start
+```
+
+### Test Endpoints
+
+**Health Check**:
+```bash
+curl http://localhost:5000/api/health
+```
+
+**Register User**:
+```bash
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123",
+    "screenName": "TestUser42"
+  }'
+```
+
+**Login**:
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123"
+  }'
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### MongoDB Connection Issues
+```bash
+# Test connection
+node -e "require('mongoose').connect(process.env.MONGODB_URI).then(() => console.log('Connected!')).catch(err => console.log('Error:', err))"
+```
+
+**Common Fixes**:
+- Check IP whitelist in MongoDB Atlas
+- Verify connection string format
+- Ensure password doesn't have special characters (URL encode if needed)
+
+### Stripe Webhook Not Working
+- Verify webhook URL is publicly accessible
+- Check webhook secret matches `.env`
+- Use Stripe CLI for local testing:
+```bash
+stripe listen --forward-to localhost:5000/api/stripe/webhook
+```
+
+### Email Not Sending
+- Verify SendGrid API key
+- Check sender email is verified
+- Look for error logs in console
+
+### AI Chat Errors
+- Verify Anthropic API key is correct
+- Check API key has sufficient credits
+- Monitor usage in Anthropic console
+
+---
+
+## 📊 Monitoring & Logs
+
+### View Logs
+```bash
+# Heroku
+heroku logs --tail
+
+# Railway
+# View in dashboard
+
+# Local
+# Check console output
+```
+
+### Monitor Performance
+- Set up error tracking (Sentry)
+- Monitor API usage (Anthropic dashboard)
+- Check Stripe dashboard for payments
+
+---
+
+## 🔒 Security Checklist
+
+- [ ] Change all default secrets
+- [ ] Use environment variables (never commit .env)
+- [ ] Enable HTTPS in production
+- [ ] Set up rate limiting
+- [ ] Implement CORS properly
+- [ ] Use helmet for security headers
+- [ ] Regular dependency updates
+- [ ] Monitor for security vulnerabilities
+
+---
+
+## 📞 Support
+
+For questions during deployment:
+- Check error logs first
+- Review this guide
+- Test endpoints with curl/Postman
+- Contact: [Your support email]
+
+---
+
+## ✅ Deployment Checklist
+
+- [ ] Local development working
+- [ ] MongoDB connected
+- [ ] All environment variables set
+- [ ] Stripe configured and tested
+- [ ] Anthropic API working
+- [ ] Email sending functional
+- [ ] Deployed to production
+- [ ] Webhooks configured
+- [ ] Frontend connected
+- [ ] Test registration flow
+- [ ] Test payment flow
+- [ ] Test AI chat
+- [ ] Monitor for 24 hours
+
+**You're ready to launch! 🚀**
